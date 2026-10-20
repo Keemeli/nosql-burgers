@@ -79,19 +79,34 @@ async function command(payload) {
   });
 
   const text = await res.text();
+  let body;
+  try {
+    body = text ? JSON.parse(text) : {};
+  } catch {
+    body = { raw: text };
+  }
+
+  // The Data API reports command-level failures with HTTP 200 and an `errors`
+  // array, so an explicit check is required or the failure looks like "no data".
+  if (res.ok && Array.isArray(body.errors) && body.errors.length > 0) {
+    const first = body.errors[0];
+    const err = new Error(`Data API ${first.errorCode || 'error'}: ${first.message || first.title || 'unknown'}`);
+    err.status = res.status;
+    err.errors = body.errors;
+    throw err;
+  }
+
   if (!res.ok) {
     const err = new Error(`Data API ${res.status}: ${text || res.statusText}`);
     err.status = res.status;
     throw err;
   }
-  try {
-    return text ? JSON.parse(text) : {};
-  } catch {
-    return { raw: text };
-  }
+
+  return body;
 }
 
-// Non-vector finds are paginated, so read the collection in pages.
+// Page size for `find`. Non-vector finds are paginated, so the collection is read
+// in pages using the `pageState` the API returns.
 const PAGE_SIZE = 100;
 
 /* ------------------------------------------------------------------------ api */
@@ -102,12 +117,14 @@ async function list() {
   }
 
   const documents = [];
-  for (let skip = 0; ; skip += PAGE_SIZE) {
-    const body = await command({ find: { filter: {}, options: { limit: PAGE_SIZE, skip } } });
-    const page = body?.data?.documents ?? [];
-    documents.push(...page);
-    if (page.length < PAGE_SIZE) break;
-  }
+  let pageState = null;
+  do {
+    const options = { limit: PAGE_SIZE };
+    if (pageState) options.pageState = pageState;
+    const body = await command({ find: { filter: {}, options } });
+    documents.push(...(body?.data?.documents ?? []));
+    pageState = body?.data?.nextPageState ?? null;
+  } while (pageState);
   return documents;
 }
 

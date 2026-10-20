@@ -5,7 +5,8 @@
  *
  * Safe to run twice: documents whose `name` already exists are skipped.
  */
-require('dotenv').config();
+// Load the repo-root .env regardless of the working directory this runs from.
+require('dotenv').config({ path: require('node:path').join(__dirname, '..', '.env') });
 
 const burgers = require('./astra');
 

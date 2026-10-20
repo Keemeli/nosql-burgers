@@ -10,6 +10,7 @@ process.env.ASTRA_TOKEN = 'AstraCS:test-token';
 delete process.env.USE_MOCK;
 
 const calls = [];
+let failNext = false;
 
 global.fetch = async (url, init) => {
   const body = JSON.parse(init.body);
@@ -21,6 +22,12 @@ global.fetch = async (url, init) => {
     statusText: 'OK',
     text: async () => JSON.stringify(payload),
   });
+
+  // The Data API answers command-level failures with HTTP 200 + an errors array.
+  if (failNext) {
+    failNext = false;
+    return reply({ errors: [{ errorCode: 'COMMAND_FIELD_VALUE_INVALID', message: 'bad command' }] });
+  }
 
   if (body.find) return reply({ data: { documents: [{ _id: 'id-1', name: 'Bob\'s Burgers' }] } });
   if (body.findOne) return reply({ data: { document: { _id: 'id-1', name: 'Bob\'s Burgers' } } });
@@ -60,8 +67,9 @@ function check(label, actual, expected) {
   check('Content-Type header sent', calls[0].init.headers['Content-Type'], 'application/json');
 
   check('list -> find command', byCommand('find').body, {
-    find: { filter: {}, options: { limit: 100, skip: 0 } },
+    find: { filter: {}, options: { limit: 100 } },
   });
+  check('list does not send the unsupported skip option', byCommand('find').body.find.options.skip, undefined);
   check('list returns documents array', docs, [{ _id: 'id-1', name: "Bob's Burgers" }]);
   check('create -> insertOne command', byCommand('insertOne').body, { insertOne: { document: { name: 'X' } } });
   check('create returns the new id', create, { documentId: 'new-id' });
@@ -82,6 +90,17 @@ function check(label, actual, expected) {
   });
   check('ensureCollection reports created', collection.created, true);
   check('seven requests in total', calls.length, 7);
+
+  // A command error arrives with HTTP 200, so it must surface as a thrown error
+  // instead of an empty result.
+  failNext = true;
+  let caught = '';
+  try {
+    await burgers.get('id-1');
+  } catch (err) {
+    caught = err.message;
+  }
+  check('error body on HTTP 200 is raised', caught.includes('COMMAND_FIELD_VALUE_INVALID'), true);
 
   console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
   process.exit(failures === 0 ? 0 : 1);

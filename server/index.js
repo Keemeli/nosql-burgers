@@ -1,4 +1,6 @@
-require('dotenv').config();
+// Load the repo-root .env regardless of the working directory the server is
+// started from (`npm --prefix server ...` runs with cwd = server/).
+require('dotenv').config({ path: require('node:path').join(__dirname, '..', '.env') });
 
 const fs = require('node:fs');
 const path = require('node:path');
