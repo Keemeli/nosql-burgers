@@ -1,20 +1,34 @@
 /**
- * Astra DB Document API client.
+ * Astra DB Data API client (collections).
  *
- * The collection is addressed by one URL (the "endpoint" from the Astra UI):
- *   https://<db-id>-<region>.apps.astra.datastax.com/api/rest/v2/namespaces/burgers/collections/burger_info
+ * Astra DB Serverless databases use the *Data API*, not the legacy Document API
+ * from older tutorials. Two differences matter:
  *
- * Everything below is plain HTTP — that is the whole point of the Document API:
- * JSON documents in, JSON documents out, no CQL and no fixed schema.
+ *   1. Endpoint: https://<db-id>-<region>.apps.astra.datastax.com/api/json/v1/<keyspace>/<collection>
+ *      (the legacy one was .../api/rest/v2/namespaces/<keyspace>/collections/<collection>)
+ *   2. Every request is a POST with a JSON *command* body, authenticated with a
+ *      `Token:` header (legacy used `x-cassandra-token`).
+ *
+ *   {"find":      {"filter": {}}                   }  ->  data.documents[]
+ *   {"findOne":   {"filter": {"_id": "..."}}       }  ->  data.document
+ *   {"insertOne": {"document": {...}}              }  ->  status.insertedIds[]
+ *   {"updateOne": {"filter": ..., "update": {...}} }  ->  status.matchedCount
+ *   {"deleteOne": {"filter": {"_id": "..."}}       }  ->  status.deletedCount
+ *
+ * Reference: https://docs.datastax.com/en/astra-db-serverless/api-reference/dataapiclient.html
  */
 const { randomUUID } = require('node:crypto');
 
-const BASE_URL = (process.env.ASTRA_ENDPOINT || '').trim().replace(/\/+$/, '');
+const API_ENDPOINT = (process.env.ASTRA_API_ENDPOINT || '').trim().replace(/\/+$/, '');
+const KEYSPACE = (process.env.ASTRA_KEYSPACE || 'burgers').trim();
+const COLLECTION = (process.env.ASTRA_COLLECTION || 'burger_info').trim();
 const TOKEN = (process.env.ASTRA_TOKEN || '').trim();
 
-// The API falls back to an in-memory store when no endpoint is configured, so the
-// UI can be developed without credentials. Same shapes, no behaviour differences.
-const USE_MOCK = process.env.USE_MOCK === '1' || BASE_URL === '';
+const COLLECTION_URL = `${API_ENDPOINT}/api/json/v1/${KEYSPACE}/${COLLECTION}`;
+
+// Falls back to an in-memory store when no endpoint is configured, so the UI can
+// be developed without credentials. Same shapes, no behaviour differences.
+const USE_MOCK = process.env.USE_MOCK === '1' || API_ENDPOINT === '';
 
 /* ------------------------------------------------------------------ mock store */
 
@@ -42,7 +56,7 @@ const seedDocs = [
   },
   {
     name: 'Midnight Double',
-    description: 'Two patties, no regrets — open until 4am',
+    description: 'Two patties, no regrets, open until 4am',
     ingredients: ['beef patty', 'beef patty', 'bacon', 'american cheese', 'gherkin'],
     visited: false,
     location: { address: '3 Neon Alley', zip: 10001, website: 'https://midnightdouble.example' },
@@ -53,51 +67,32 @@ const mock = new Map(seedDocs.map((doc) => [randomUUID(), doc]));
 
 /* ------------------------------------------------------------------- transport */
 
-function headers(extra = {}) {
-  return {
-    accept: 'application/json',
-    'x-cassandra-token': TOKEN,
-    ...extra,
-  };
-}
+// Runs one Data API command against the collection and returns the parsed body.
+async function command(payload) {
+  const res = await fetch(COLLECTION_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Token: TOKEN,
+    },
+    body: JSON.stringify(payload),
+  });
 
-async function request(path = '', init = {}) {
-  const res = await fetch(`${BASE_URL}${path}`, { ...init, headers: headers(init.headers) });
   const text = await res.text();
-
   if (!res.ok) {
-    const err = new Error(`Astra Document API ${res.status}: ${text || res.statusText}`);
+    const err = new Error(`Data API ${res.status}: ${text || res.statusText}`);
     err.status = res.status;
     throw err;
   }
-  if (!text) return {};
   try {
-    return JSON.parse(text);
+    return text ? JSON.parse(text) : {};
   } catch {
     return { raw: text };
   }
 }
 
-// The v2 API returns { data: { <documentId>: { ...doc } }, pageState: null }.
-// Normalise that (and the occasional array response) to an array of documents.
-function toArray(payload) {
-  const data = payload && payload.data !== undefined ? payload.data : payload;
-  if (!data) return [];
-  if (Array.isArray(data)) return data.map((doc) => ({ _id: doc._id ?? doc.id, ...doc }));
-  return Object.entries(data).map(([id, doc]) => ({ _id: doc._id ?? id, ...doc }));
-}
-
-function unwrapOne(payload) {
-  if (!payload) return null;
-  if (payload.data && !Array.isArray(payload.data) && typeof payload.data === 'object') {
-    // { data: { <id>: {...} } }
-    const entries = Object.entries(payload.data);
-    if (entries.length === 1 && typeof entries[0][1] === 'object') {
-      return { _id: entries[0][1]._id ?? entries[0][0], ...entries[0][1] };
-    }
-  }
-  return payload;
-}
+// Non-vector finds are paginated, so read the collection in pages.
+const PAGE_SIZE = 100;
 
 /* ------------------------------------------------------------------------ api */
 
@@ -105,18 +100,24 @@ async function list() {
   if (USE_MOCK) {
     return [...mock.entries()].map(([id, doc]) => ({ _id: id, ...doc }));
   }
-  const payload = await request('?page-size=100');
-  return toArray(payload);
+
+  const documents = [];
+  for (let skip = 0; ; skip += PAGE_SIZE) {
+    const body = await command({ find: { filter: {}, options: { limit: PAGE_SIZE, skip } } });
+    const page = body?.data?.documents ?? [];
+    documents.push(...page);
+    if (page.length < PAGE_SIZE) break;
+  }
+  return documents;
 }
 
 async function get(id) {
   if (USE_MOCK) {
     const doc = mock.get(id);
-    if (!doc) return null;
-    return { _id: id, ...doc };
+    return doc ? { _id: id, ...doc } : null;
   }
-  const payload = await request(`/${encodeURIComponent(id)}`);
-  return unwrapOne(payload);
+  const body = await command({ findOne: { filter: { _id: id } } });
+  return body?.data?.document ?? null;
 }
 
 async function create(doc) {
@@ -125,12 +126,8 @@ async function create(doc) {
     mock.set(id, doc);
     return { documentId: id };
   }
-  const payload = await request('', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(doc),
-  });
-  return { documentId: payload.documentId || payload.insertedId || payload.id };
+  const body = await command({ insertOne: { document: doc } });
+  return { documentId: body?.status?.insertedIds?.[0] ?? null };
 }
 
 async function update(id, doc) {
@@ -139,20 +136,24 @@ async function update(id, doc) {
     mock.set(id, doc);
     return { _id: id, ...doc };
   }
-  const payload = await request(`/${encodeURIComponent(id)}`, {
-    method: 'PUT',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(doc),
-  });
-  return unwrapOne(payload);
+  const body = await command({ updateOne: { filter: { _id: id }, update: { $set: doc } } });
+  if ((body?.status?.matchedCount ?? 0) === 0) return null;
+  return get(id);
 }
 
 async function remove(id) {
   if (USE_MOCK) {
     return mock.delete(id);
   }
-  await request(`/${encodeURIComponent(id)}`, { method: 'DELETE' });
-  return true;
+  const body = await command({ deleteOne: { filter: { _id: id } } });
+  return (body?.status?.deletedCount ?? 0) > 0;
+}
+
+/** Creates the collection if it doesn't exist yet (used by `npm run seed`). */
+async function ensureCollection() {
+  if (USE_MOCK) return { created: false, mock: true };
+  const body = await command({ createCollection: { name: COLLECTION } });
+  return { created: true, status: body };
 }
 
 module.exports = {
@@ -161,6 +162,8 @@ module.exports = {
   create,
   update,
   remove,
+  ensureCollection,
   seedDocs,
   isMock: () => USE_MOCK,
+  collectionUrl: () => (USE_MOCK ? '(mock store)' : COLLECTION_URL),
 };

@@ -9,6 +9,7 @@
     "client": "npm --prefix client run dev",
     "build": "npm --prefix client run build",
     "serve": "npm --prefix server start",
-    "seed": "npm --prefix server run seed"
+    "seed": "npm --prefix server run seed",
+    "test": "npm --prefix server test"
   }
 }

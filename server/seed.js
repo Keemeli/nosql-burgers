@@ -11,8 +11,19 @@ const burgers = require('./astra');
 
 (async () => {
   if (burgers.isMock()) {
-    console.log('No ASTRA_ENDPOINT configured — the mock store is already seeded, nothing to do.');
+    console.log('No ASTRA_API_ENDPOINT configured — the mock store is already seeded, nothing to do.');
     return;
+  }
+
+  console.log(`Endpoint: ${burgers.collectionUrl()}`);
+
+  // Create the collection on the first run; afterwards the Data API reports that
+  // it already exists, which is fine.
+  try {
+    await burgers.ensureCollection();
+    console.log('collection created');
+  } catch (err) {
+    console.log(`collection: ${err.message}`);
   }
 
   const existing = await burgers.list();
