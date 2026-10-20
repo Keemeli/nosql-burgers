@@ -70,6 +70,16 @@ npm run client          # terminal 2 — UI on http://localhost:5173
 
 Open <http://localhost:5173>.
 
+### Single-port mode (what to show for review)
+
+```bash
+npm run build           # builds the React app into client/dist
+npm run serve           # Express serves the API *and* the built UI
+```
+
+Open <http://localhost:8000> — one process, one port, no Vite proxy involved.
+The dev pair above is only needed while editing the front end.
+
 ### Running without a database
 
 For UI work the API falls back to an in-memory store when `ASTRA_ENDPOINT` is empty,

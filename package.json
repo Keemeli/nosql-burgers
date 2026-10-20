@@ -7,6 +7,8 @@
     "install:all": "npm --prefix server install && npm --prefix client install",
     "server": "npm --prefix server run dev",
     "client": "npm --prefix client run dev",
+    "build": "npm --prefix client run build",
+    "serve": "npm --prefix server start",
     "seed": "npm --prefix server run seed"
   }
 }

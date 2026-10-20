@@ -1,5 +1,7 @@
 require('dotenv').config();
 
+const fs = require('node:fs');
+const path = require('node:path');
 const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
@@ -101,7 +103,21 @@ function normalise(body) {
 
 /* ----------------------------------------------------------------- handlers */
 
+// Single-port mode: after `npm run build`, the Express server also serves the
+// built React app, so the whole project runs from http://localhost:8000.
+const clientDist = path.join(__dirname, '..', 'client', 'dist');
+const clientIndex = path.join(clientDist, 'index.html');
+const hasClient = fs.existsSync(clientIndex);
+if (hasClient) {
+  app.use(express.static(clientDist));
+}
+
 app.use((req, res) => {
+  // Let the React app handle its own routes on a plain browser GET.
+  const isApi = req.path.startsWith('/burgers') || req.path.startsWith('/health');
+  if (hasClient && req.method === 'GET' && !isApi) {
+    return res.sendFile(clientIndex);
+  }
   res.status(404).json({ error: `not found: ${req.method} ${req.originalUrl}` });
 });
 
