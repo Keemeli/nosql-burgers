@@ -132,7 +132,7 @@ export default function App() {
     <div className="page">
       <header className="hero">
         <div>
-          <p className="kicker">Astra DB · Document API</p>
+          <p className="kicker">Astra DB · Data API</p>
           <h1>Burger places worth the detour</h1>
           <p className="lede">
             Every entry is one JSON document in the <code>burger_info</code> collection — no
@@ -297,7 +297,7 @@ export default function App() {
       </section>
 
       <footer className="footer">
-        Project 1 — NoSQL course · Express reading the Astra Document API over REST
+        Project 1 — NoSQL course · Express reading the Astra Data API over HTTP
       </footer>
     </div>
   );

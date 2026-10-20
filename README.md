@@ -11,6 +11,10 @@ written over HTTP with JSON commands — no CQL, no fixed schema, no SQL.
 React (Vite)  ──►  Express API (:8000)  ──►  Astra DB Data API  ──►  collection "burger_info"
 ```
 
+![The app running against Astra DB, listing documents from the burger_info collection](docs/burgers-app.png)
+
+_Real output: four documents read from the `burger_info` collection over the Data API._
+
 > **Note on the API name.** The 2021 course uses the *Document API*
 > (`/api/rest/v2/namespaces/...`, header `x-cassandra-token`), which newer Astra DB
 > Serverless databases no longer expose. The current equivalent is the **Data API**
