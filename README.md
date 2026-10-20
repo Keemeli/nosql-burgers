@@ -5,7 +5,7 @@ Course project for the freeCodeCamp **Learn NoSQL in 3 Hours** course (Ania Kub�
 
 A small full-stack app that lists your favourite burger restaurants. The data lives
 as JSON documents in an Apache Cassandra / Astra DB **collection**, and is read and
-written over HTTP with JSON commands — no CQL, no fixed schema, no SQL.
+written over HTTP with JSON commands — no CQL, no fixed schema, no SQL
 
 ```
 React (Vite)  ──►  Express API (:8000)  ──►  Astra DB Data API  ──►  collection "burger_info"
